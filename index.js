@@ -1,75 +1,72 @@
 const { Telegraf } = require('telegraf');
-const { Pool } = require('pg');
+const mongoose = require('mongoose');
 
 // Environment variables
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const DATABASE_URL = process.env.DATABASE_URL;
+const MONGODB_URI = process.env.MONGODB_URI;
 
-// Initialize bot and database
+// Initialize bot
 const bot = new Telegraf(BOT_TOKEN);
-const pool = new Pool({
-  connectionString: DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+
+// MongoDB Schema
+const userSchema = new mongoose.Schema({
+  userId: { type: Number, required: true, unique: true },
+  username: String,
+  status: { type: String, default: 'idle' }, // idle, waiting, chatting
+  partnerId: { type: Number, default: null },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
 });
 
-// Initialize database tables
-async function initDB() {
-  const client = await pool.connect();
+const User = mongoose.model('User', userSchema);
+
+// Connect to MongoDB
+async function connectDB() {
   try {
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        user_id BIGINT PRIMARY KEY,
-        username TEXT,
-        status TEXT DEFAULT 'idle',
-        partner_id BIGINT,
-        created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW()
-      );
-      
-      CREATE INDEX IF NOT EXISTS idx_status ON users(status);
-    `);
-    console.log('✅ Database initialized');
+    await mongoose.connect(MONGODB_URI);
+    console.log('✅ MongoDB connected');
   } catch (err) {
-    console.error('❌ Database init error:', err);
-  } finally {
-    client.release();
+    console.error('❌ MongoDB connection error:', err);
+    process.exit(1);
   }
 }
 
 // Helper functions
 async function getUser(userId) {
-  const result = await pool.query('SELECT * FROM users WHERE user_id = $1', [userId]);
-  return result.rows[0];
+  return await User.findOne({ userId });
 }
 
 async function createOrUpdateUser(userId, username) {
-  await pool.query(`
-    INSERT INTO users (user_id, username, status)
-    VALUES ($1, $2, 'idle')
-    ON CONFLICT (user_id) 
-    DO UPDATE SET username = $2, updated_at = NOW()
-  `, [userId, username]);
+  await User.findOneAndUpdate(
+    { userId },
+    { 
+      userId,
+      username,
+      status: 'idle',
+      updatedAt: Date.now()
+    },
+    { upsert: true, new: true }
+  );
 }
 
 async function updateUserStatus(userId, status, partnerId = null) {
-  await pool.query(
-    'UPDATE users SET status = $1, partner_id = $2, updated_at = NOW() WHERE user_id = $3',
-    [status, partnerId, userId]
+  await User.findOneAndUpdate(
+    { userId },
+    { status, partnerId, updatedAt: Date.now() }
   );
 }
 
 async function findWaitingUser(excludeUserId) {
-  const result = await pool.query(
-    'SELECT * FROM users WHERE status = $1 AND user_id != $2 LIMIT 1',
-    ['waiting', excludeUserId]
-  );
-  return result.rows[0];
+  return await User.findOne({
+    status: 'waiting',
+    userId: { $ne: excludeUserId }
+  });
 }
 
 async function disconnectPair(userId) {
   const user = await getUser(userId);
-  if (user && user.partner_id) {
-    const partnerId = user.partner_id;
+  if (user && user.partnerId) {
+    const partnerId = user.partnerId;
     await updateUserStatus(userId, 'idle');
     await updateUserStatus(partnerId, 'idle');
     return partnerId;
@@ -97,31 +94,29 @@ bot.start(async (ctx) => {
 
 bot.command('find', async (ctx) => {
   const userId = ctx.from.id;
-  const user = await getUser(userId);
+  let user = await getUser(userId);
   
   if (!user) {
     await createOrUpdateUser(userId, ctx.from.username || ctx.from.first_name);
+    user = await getUser(userId);
   }
   
-  if (user && user.status === 'chatting') {
+  if (user.status === 'chatting') {
     return ctx.reply('❌ Kamu sedang chat! Gunakan /stop untuk mengakhiri.');
   }
   
-  // Cari user yang sedang waiting
   const partner = await findWaitingUser(userId);
   
   if (partner) {
-    // Pair dengan partner yang ditemukan
-    await updateUserStatus(userId, 'chatting', partner.user_id);
-    await updateUserStatus(partner.user_id, 'chatting', userId);
+    await updateUserStatus(userId, 'chatting', partner.userId);
+    await updateUserStatus(partner.userId, 'chatting', userId);
     
     await ctx.reply('✅ Partner ditemukan! Mulai chat sekarang.\n\n💡 Gunakan /stop untuk mengakhiri atau /next untuk partner baru.');
     await bot.telegram.sendMessage(
-      partner.user_id,
+      partner.userId,
       '✅ Partner ditemukan! Mulai chat sekarang.\n\n💡 Gunakan /stop untuk mengakhiri atau /next untuk partner baru.'
     );
   } else {
-    // Masuk ke waiting list
     await updateUserStatus(userId, 'waiting');
     await ctx.reply('🔍 Mencari partner... Tunggu sebentar.\n\n💡 Kamu akan otomatis terhubung saat ada partner tersedia.');
   }
@@ -148,15 +143,14 @@ bot.command('next', async (ctx) => {
     await bot.telegram.sendMessage(partnerId, '👋 Partner telah pindah ke chat lain. Gunakan /find untuk mencari partner baru.');
   }
   
-  // Langsung cari partner baru
   const partner = await findWaitingUser(userId);
   
   if (partner) {
-    await updateUserStatus(userId, 'chatting', partner.user_id);
-    await updateUserStatus(partner.user_id, 'chatting', userId);
+    await updateUserStatus(userId, 'chatting', partner.userId);
+    await updateUserStatus(partner.userId, 'chatting', userId);
     
     await ctx.reply('✅ Partner baru ditemukan! Mulai chat sekarang.');
-    await bot.telegram.sendMessage(partner.user_id, '✅ Partner ditemukan! Mulai chat sekarang.');
+    await bot.telegram.sendMessage(partner.userId, '✅ Partner ditemukan! Mulai chat sekarang.');
   } else {
     await updateUserStatus(userId, 'waiting');
     await ctx.reply('🔍 Mencari partner baru... Tunggu sebentar.');
@@ -168,12 +162,12 @@ bot.on('text', async (ctx) => {
   const userId = ctx.from.id;
   const user = await getUser(userId);
   
-  if (!user || user.status !== 'chatting' || !user.partner_id) {
+  if (!user || user.status !== 'chatting' || !user.partnerId) {
     return ctx.reply('❌ Kamu belum terhubung dengan siapapun.\n\n💡 Gunakan /find untuk mencari partner chat.');
   }
   
   try {
-    await bot.telegram.sendMessage(user.partner_id, `💬 Stranger: ${ctx.message.text}`);
+    await bot.telegram.sendMessage(user.partnerId, `💬 Stranger: ${ctx.message.text}`);
   } catch (err) {
     await disconnectPair(userId);
     await ctx.reply('❌ Partner tidak tersedia. Gunakan /find untuk mencari partner baru.');
@@ -185,14 +179,14 @@ bot.on('photo', async (ctx) => {
   const userId = ctx.from.id;
   const user = await getUser(userId);
   
-  if (!user || user.status !== 'chatting' || !user.partner_id) {
+  if (!user || user.status !== 'chatting' || !user.partnerId) {
     return ctx.reply('❌ Kamu belum terhubung dengan siapapun.');
   }
   
   try {
     const photo = ctx.message.photo[ctx.message.photo.length - 1];
     const caption = ctx.message.caption || '';
-    await bot.telegram.sendPhoto(user.partner_id, photo.file_id, {
+    await bot.telegram.sendPhoto(user.partnerId, photo.file_id, {
       caption: `📷 Stranger: ${caption}`
     });
   } catch (err) {
@@ -206,12 +200,12 @@ bot.on('sticker', async (ctx) => {
   const userId = ctx.from.id;
   const user = await getUser(userId);
   
-  if (!user || user.status !== 'chatting' || !user.partner_id) {
+  if (!user || user.status !== 'chatting' || !user.partnerId) {
     return ctx.reply('❌ Kamu belum terhubung dengan siapapun.');
   }
   
   try {
-    await bot.telegram.sendSticker(user.partner_id, ctx.message.sticker.file_id);
+    await bot.telegram.sendSticker(user.partnerId, ctx.message.sticker.file_id);
   } catch (err) {
     await disconnectPair(userId);
     await ctx.reply('❌ Partner tidak tersedia. Gunakan /find untuk mencari partner baru.');
@@ -226,20 +220,9 @@ bot.catch((err, ctx) => {
 
 // Start bot
 async function startBot() {
-  await initDB();
-  
-  if (process.env.NODE_ENV === 'production') {
-    // Webhook mode for production
-    const domain = process.env.RAILWAY_PUBLIC_DOMAIN || process.env.RENDER_EXTERNAL_URL;
-    if (domain) {
-      await bot.telegram.setWebhook(`https://${domain}/webhook`);
-      console.log('✅ Webhook set to:', domain);
-    }
-  } else {
-    // Polling mode for development
-    bot.launch();
-    console.log('✅ Bot started in polling mode');
-  }
+  await connectDB();
+  bot.launch();
+  console.log('✅ Bot started successfully!');
 }
 
 startBot();
@@ -247,6 +230,3 @@ startBot();
 // Graceful stop
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
-
-// Export for serverless
-module.exports = bot;
