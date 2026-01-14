@@ -1,7 +1,7 @@
 {
   "name": "telegram-anonymous-chat-bot",
   "version": "1.0.0",
-  "description": "Anonymous chat bot for Telegram",
+  "description": "Anonymous chat bot for Telegram with MongoDB",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -12,7 +12,7 @@
   "license": "MIT",
   "dependencies": {
     "telegraf": "^4.15.0",
-    "pg": "^8.11.3"
+    "mongoose": "^8.0.3"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
