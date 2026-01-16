@@ -88,32 +88,32 @@ bot.start(async (ctx) => {
   await getOrCreateUser(ctx.from.id, ctx.from.username, ctx.from.first_name);
   
   await ctx.reply(
-    `🎭 *Welcome to Anonymous Chat!*\n\n` +
-    `Chat with random strangers anonymously.\n\n` +
-    `*Commands:*\n` +
-    `/search` - Find a chat partner\n` +
-    `/stop` - End current chat\n` +
-    `/next` - Skip to next partner\n` +
-    `/help` - Show help\n\n` +
-    `Start chatting now with /search`,
+    '🎭 *Welcome to Anonymous Chat!*\n\n' +
+    'Chat with random strangers anonymously.\n\n' +
+    '*Commands:*\n' +
+    '/search - Find a chat partner\n' +
+    '/stop - End current chat\n' +
+    '/next - Skip to next partner\n' +
+    '/help - Show help\n\n' +
+    'Start chatting now with /search',
     { parse_mode: 'Markdown' }
   );
 });
 
 bot.command('help', async (ctx) => {
   await ctx.reply(
-    `📖 *How to use:*\n\n` +
-    `1️⃣ Use /search to find a random partner\n` +
-    `2️⃣ Start chatting when connected\n` +
-    `3️⃣ Use /next to skip to another person\n` +
-    `4️⃣ Use /stop to end the chat\n\n` +
-    `*Available Commands:*\n` +
-    `/search` - Find a partner\n` +
-    `/stop` - End chat\n` +
-    `/next` - Next partner\n` +
-    `/stats` - Your statistics\n` +
-    `/help` - Show this help\n\n` +
-    `⚠️ Be respectful to others!`,
+    '📖 *How to use:*\n\n' +
+    '1️⃣ Use /search to find a random partner\n' +
+    '2️⃣ Start chatting when connected\n' +
+    '3️⃣ Use /next to skip to another person\n' +
+    '4️⃣ Use /stop to end the chat\n\n' +
+    '*Available Commands:*\n' +
+    '/search - Find a partner\n' +
+    '/stop - End chat\n' +
+    '/next - Next partner\n' +
+    '/stats - Your statistics\n' +
+    '/help - Show this help\n\n' +
+    '⚠️ Be respectful to others!',
     { parse_mode: 'Markdown' }
   );
 });
@@ -143,21 +143,21 @@ bot.command('search', async (ctx) => {
     await User.updateOne({ userId: partner.userId }, { $inc: { totalChats: 1 } });
     
     await ctx.reply(
-      `✅ *Chat partner found!*\n\n` +
-      `You can now start chatting.\n` +
-      `Send any message to talk!\n\n` +
-      `💡 /next - Skip partner\n` +
-      `💡 /stop - End chat`,
+      '✅ *Chat partner found!*\n\n' +
+      'You can now start chatting.\n' +
+      'Send any message to talk!\n\n' +
+      '💡 /next - Skip partner\n' +
+      '💡 /stop - End chat',
       { parse_mode: 'Markdown' }
     );
     
     await bot.telegram.sendMessage(
       partner.userId,
-      `✅ *Chat partner found!*\n\n` +
-      `You can now start chatting.\n` +
-      `Send any message to talk!\n\n` +
-      `💡 /next - Skip partner\n` +
-      `💡 /stop - End chat`,
+      '✅ *Chat partner found!*\n\n' +
+      'You can now start chatting.\n' +
+      'Send any message to talk!\n\n' +
+      '💡 /next - Skip partner\n' +
+      '💡 /stop - End chat',
       { parse_mode: 'Markdown' }
     );
   } else {
@@ -165,9 +165,9 @@ bot.command('search', async (ctx) => {
     await updateStatus(userId, 'searching');
     
     await ctx.reply(
-      `🔍 *Searching for a partner...*\n\n` +
-      `Please wait. You'll be notified when someone is found.\n\n` +
-      `💡 /stop to cancel search`,
+      '🔍 *Searching for a partner...*\n\n' +
+      'Please wait. You will be notified when someone is found.\n\n' +
+      '💡 /stop to cancel search',
       { parse_mode: 'Markdown' }
     );
   }
@@ -195,15 +195,15 @@ bot.command('stop', async (ctx) => {
   
   if (partnerId) {
     await ctx.reply(
-      `👋 *Chat ended*\n\n` +
-      `Use /search to find another partner!`,
+      '👋 *Chat ended*\n\n' +
+      'Use /search to find another partner!',
       { parse_mode: 'Markdown' }
     );
     
     await bot.telegram.sendMessage(
       partnerId,
-      `👋 *Partner left the chat*\n\n` +
-      `Use /search to find another partner!`,
+      '👋 *Partner left the chat*\n\n' +
+      'Use /search to find another partner!',
       { parse_mode: 'Markdown' }
     );
   } else {
@@ -224,8 +224,8 @@ bot.command('next', async (ctx) => {
   if (partnerId) {
     await bot.telegram.sendMessage(
       partnerId,
-      `👋 *Partner skipped to another chat*\n\n` +
-      `Use /search to find a new partner!`,
+      '👋 *Partner skipped to another chat*\n\n' +
+      'Use /search to find a new partner!',
       { parse_mode: 'Markdown' }
     );
   }
@@ -243,26 +243,26 @@ bot.command('next', async (ctx) => {
     await User.updateOne({ userId: newPartner.userId }, { $inc: { totalChats: 1 } });
     
     await ctx.reply(
-      `✅ *New chat partner found!*\n\n` +
-      `Start chatting now!\n\n` +
-      `💡 /next - Skip\n` +
-      `💡 /stop - End chat`,
+      '✅ *New chat partner found!*\n\n' +
+      'Start chatting now!\n\n' +
+      '💡 /next - Skip\n' +
+      '💡 /stop - End chat',
       { parse_mode: 'Markdown' }
     );
     
     await bot.telegram.sendMessage(
       newPartner.userId,
-      `✅ *Chat partner found!*\n\n` +
-      `Start chatting now!\n\n` +
-      `💡 /next - Skip\n` +
-      `💡 /stop - End chat`,
+      '✅ *Chat partner found!*\n\n' +
+      'Start chatting now!\n\n' +
+      '💡 /next - Skip\n' +
+      '💡 /stop - End chat',
       { parse_mode: 'Markdown' }
     );
   } else {
     await updateStatus(userId, 'searching');
     await ctx.reply(
-      `🔍 *Searching for a partner...*\n\n` +
-      `Please wait.`,
+      '🔍 *Searching for a partner...*\n\n' +
+      'Please wait.',
       { parse_mode: 'Markdown' }
     );
   }
@@ -281,12 +281,12 @@ bot.command('stats', async (ctx) => {
   });
   
   await ctx.reply(
-    `📊 *Your Statistics*\n\n` +
-    `💬 Total Chats: ${user.totalChats}\n` +
-    `✉️ Messages Sent: ${user.totalMessages}\n\n` +
-    `📈 *Global Stats*\n` +
-    `👥 Total Users: ${totalUsers}\n` +
-    `🟢 Online Now: ${onlineUsers}`,
+    '📊 *Your Statistics*\n\n' +
+    '💬 Total Chats: ' + user.totalChats + '\n' +
+    '✉️ Messages Sent: ' + user.totalMessages + '\n\n' +
+    '📈 *Global Stats*\n' +
+    '👥 Total Users: ' + totalUsers + '\n' +
+    '🟢 Online Now: ' + onlineUsers,
     { parse_mode: 'Markdown' }
   );
 });
@@ -315,7 +315,7 @@ bot.on('text', async (ctx) => {
     try {
       await bot.telegram.sendMessage(
         user.partnerId,
-        `💬 *Stranger:* ${ctx.message.text}`,
+        '💬 *Stranger:* ' + ctx.message.text,
         { parse_mode: 'Markdown' }
       );
       
@@ -339,7 +339,7 @@ bot.on('photo', async (ctx) => {
   try {
     const photo = ctx.message.photo[ctx.message.photo.length - 1];
     const caption = ctx.message.caption 
-      ? `📷 *Stranger:* ${ctx.message.caption}` 
+      ? '📷 *Stranger:* ' + ctx.message.caption
       : '📷 *Stranger sent a photo*';
     
     await bot.telegram.sendPhoto(
@@ -366,7 +366,7 @@ bot.on('video', async (ctx) => {
   
   try {
     const caption = ctx.message.caption 
-      ? `🎥 *Stranger:* ${ctx.message.caption}` 
+      ? '🎥 *Stranger:* ' + ctx.message.caption
       : '🎥 *Stranger sent a video*';
     
     await bot.telegram.sendVideo(
