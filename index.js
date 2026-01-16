@@ -6,6 +6,9 @@ const MONGODB_URI = process.env.MONGODB_URI;
 
 const bot = new Telegraf(BOT_TOKEN);
 
+// Session storage
+const userSessions = {};
+
 // MongoDB Schemas
 const userSchema = new mongoose.Schema({
   userId: { type: Number, required: true, unique: true },
@@ -14,15 +17,17 @@ const userSchema = new mongoose.Schema({
   status: { type: String, default: 'idle' }, // idle, searching, chatting
   partnerId: { type: Number, default: null },
   
+  // Profile
+  gender: String, // male, female, other
+  hasCompletedSetup: { type: Boolean, default: false },
+  
   // Stats
   totalChats: { type: Number, default: 0 },
   totalMessages: { type: Number, default: 0 },
   
-  // Premium features (for future)
+  // Premium features
   isPremium: { type: Boolean, default: false },
-  gender: String,
-  age: Number,
-  country: String,
+  premiumUntil: Date,
   
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
@@ -85,11 +90,57 @@ async function endChat(userId) {
 
 // Commands
 bot.start(async (ctx) => {
-  await getOrCreateUser(ctx.from.id, ctx.from.username, ctx.from.first_name);
+  const user = await getOrCreateUser(ctx.from.id, ctx.from.username, ctx.from.first_name);
   
+  // Check if user has completed setup
+  if (!user.hasCompletedSetup) {
+    const keyboard = Markup.inlineKeyboard([
+      [
+        Markup.button.callback('👨 Male', 'gender_male'),
+        Markup.button.callback('👩 Female', 'gender_female')
+      ],
+      [Markup.button.callback('🌈 Other', 'gender_other')]
+    ]);
+    
+    return ctx.reply(
+      '🎭 *Welcome to Anonymous Chat!*\n\n' +
+      'Before you start, please select your gender:\n\n' +
+      '_(This helps us provide better matching for premium users)_',
+      { parse_mode: 'Markdown', ...keyboard }
+    );
+  }
+  
+  // User already setup
   await ctx.reply(
-    '🎭 *Welcome to Anonymous Chat!*\n\n' +
+    '🎭 *Welcome back to Anonymous Chat!*\n\n' +
     'Chat with random strangers anonymously.\n\n' +
+    '*Commands:*\n' +
+    '/search - Find a chat partner\n' +
+    '/stop - End current chat\n' +
+    '/next - Skip to next partner\n' +
+    '/help - Show help\n\n' +
+    'Start chatting now with /search',
+    { parse_mode: 'Markdown' }
+  );
+});
+
+// Gender selection callback
+bot.action(/gender_(.+)/, async (ctx) => {
+  const gender = ctx.match[1];
+  
+  await User.findOneAndUpdate(
+    { userId: ctx.from.id },
+    { 
+      gender, 
+      hasCompletedSetup: true,
+      updatedAt: Date.now()
+    }
+  );
+  
+  await ctx.answerCbQuery();
+  await ctx.editMessageText(
+    '✅ *Profile completed!*\n\n' +
+    'You can now start chatting anonymously.\n\n' +
     '*Commands:*\n' +
     '/search - Find a chat partner\n' +
     '/stop - End current chat\n' +
@@ -121,6 +172,11 @@ bot.command('help', async (ctx) => {
 bot.command('search', async (ctx) => {
   const userId = ctx.from.id;
   const user = await getOrCreateUser(userId, ctx.from.username, ctx.from.first_name);
+  
+  // Check if setup completed
+  if (!user.hasCompletedSetup) {
+    return ctx.reply('⚠️ Please complete your profile first by using /start');
+  }
   
   if (user.status === 'chatting') {
     return ctx.reply('❌ You are already in a chat! Use /stop to end it first.');
@@ -280,10 +336,18 @@ bot.command('stats', async (ctx) => {
     status: { $in: ['searching', 'chatting'] } 
   });
   
+  const genderEmoji = {
+    male: '👨',
+    female: '👩',
+    other: '🌈'
+  };
+  
   await ctx.reply(
     '📊 *Your Statistics*\n\n' +
+    genderEmoji[user.gender] + ' Gender: ' + (user.gender || 'Not set') + '\n' +
     '💬 Total Chats: ' + user.totalChats + '\n' +
-    '✉️ Messages Sent: ' + user.totalMessages + '\n\n' +
+    '✉️ Messages Sent: ' + user.totalMessages + '\n' +
+    '⭐ Premium: ' + (user.isPremium ? 'Yes' : 'No') + '\n\n' +
     '📈 *Global Stats*\n' +
     '👥 Total Users: ' + totalUsers + '\n' +
     '🟢 Online Now: ' + onlineUsers,
@@ -303,6 +367,10 @@ bot.on('text', async (ctx) => {
     return ctx.reply('Use /start to begin!');
   }
   
+  if (!user.hasCompletedSetup) {
+    return ctx.reply('⚠️ Please complete your profile first by using /start');
+  }
+  
   if (user.status === 'idle') {
     return ctx.reply('❌ You are not in a chat.\n\nUse /search to find a partner!');
   }
@@ -313,10 +381,10 @@ bot.on('text', async (ctx) => {
   
   if (user.status === 'chatting' && user.partnerId) {
     try {
+      // Send message WITHOUT "Stranger:" prefix - like normal chat
       await bot.telegram.sendMessage(
         user.partnerId,
-        '💬 *Stranger:* ' + ctx.message.text,
-        { parse_mode: 'Markdown' }
+        ctx.message.text
       );
       
       await User.updateOne({ userId }, { $inc: { totalMessages: 1 } });
@@ -338,14 +406,12 @@ bot.on('photo', async (ctx) => {
   
   try {
     const photo = ctx.message.photo[ctx.message.photo.length - 1];
-    const caption = ctx.message.caption 
-      ? '📷 *Stranger:* ' + ctx.message.caption
-      : '📷 *Stranger sent a photo*';
+    const caption = ctx.message.caption || '';
     
     await bot.telegram.sendPhoto(
       user.partnerId,
       photo.file_id,
-      { caption, parse_mode: 'Markdown' }
+      { caption }
     );
     
     await User.updateOne({ userId }, { $inc: { totalMessages: 1 } });
@@ -365,14 +431,12 @@ bot.on('video', async (ctx) => {
   }
   
   try {
-    const caption = ctx.message.caption 
-      ? '🎥 *Stranger:* ' + ctx.message.caption
-      : '🎥 *Stranger sent a video*';
+    const caption = ctx.message.caption || '';
     
     await bot.telegram.sendVideo(
       user.partnerId,
       ctx.message.video.file_id,
-      { caption, parse_mode: 'Markdown' }
+      { caption }
     );
     
     await User.updateOne({ userId }, { $inc: { totalMessages: 1 } });
@@ -429,6 +493,47 @@ bot.on('animation', async (ctx) => {
   
   try {
     await bot.telegram.sendAnimation(user.partnerId, ctx.message.animation.file_id);
+    await User.updateOne({ userId }, { $inc: { totalMessages: 1 } });
+  } catch (err) {
+    await endChat(userId);
+    await ctx.reply('❌ Partner disconnected.\n\nUse /search to find a new partner!');
+  }
+});
+
+// Handle documents
+bot.on('document', async (ctx) => {
+  const userId = ctx.from.id;
+  const user = await getUser(userId);
+  
+  if (!user || user.status !== 'chatting' || !user.partnerId) {
+    return ctx.reply('❌ You need to be in a chat to send files!');
+  }
+  
+  try {
+    const caption = ctx.message.caption || '';
+    await bot.telegram.sendDocument(
+      user.partnerId, 
+      ctx.message.document.file_id,
+      { caption }
+    );
+    await User.updateOne({ userId }, { $inc: { totalMessages: 1 } });
+  } catch (err) {
+    await endChat(userId);
+    await ctx.reply('❌ Partner disconnected.\n\nUse /search to find a new partner!');
+  }
+});
+
+// Handle audio
+bot.on('audio', async (ctx) => {
+  const userId = ctx.from.id;
+  const user = await getUser(userId);
+  
+  if (!user || user.status !== 'chatting' || !user.partnerId) {
+    return ctx.reply('❌ You need to be in a chat to send audio!');
+  }
+  
+  try {
+    await bot.telegram.sendAudio(user.partnerId, ctx.message.audio.file_id);
     await User.updateOne({ userId }, { $inc: { totalMessages: 1 } });
   } catch (err) {
     await endChat(userId);
