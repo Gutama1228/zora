@@ -234,9 +234,7 @@ bot.start(async (ctx) => {
   ]).resize();
   
   await ctx.reply(
-    '*Welcome back!* 👋\n\n' +
-    '🎭 Chat anonymously with strangers\n\n' +
-    '🔍 Tap *Search* to find someone!',
+    'Welcome back! 👋\n\n🎭 Chat anonymously with strangers\n\n🔍 Tap Search to find someone!',
     { parse_mode: 'Markdown', ...keyboard }
   );
 });
@@ -247,7 +245,7 @@ bot.action(/setup_(male|female)/, async (ctx) => {
   
   await ctx.answerCbQuery();
   await ctx.editMessageText(
-    '👍 *Gender set!*\n\nNow, enter your age (18-99):',
+    '👍 Gender set!\n\nNow, enter your age (18-99):',
     { parse_mode: 'Markdown' }
   );
   
@@ -322,12 +320,12 @@ async function handleSearch(ctx) {
 
 bot.hears('❓ Help', async (ctx) => {
   await ctx.reply(
-    '*How to use:* 📖\n\n' +
-    '1️⃣ Tap *Search* to find a stranger\n' +
+    'How to use: 📖\n\n' +
+    '1️⃣ Tap Search to find a stranger\n' +
     '2️⃣ Chat anonymously\n' +
     '3️⃣ Use /next to find someone new\n' +
     '4️⃣ Use /stop to end chat\n\n' +
-    '*Commands:*\n' +
+    'Commands:\n' +
     '/search - Find stranger\n' +
     '/next - Next stranger\n' +
     '/stop - End chat\n' +
@@ -376,7 +374,7 @@ bot.command('next', async (ctx) => {
     ]);
     
     return ctx.reply(
-      '⚠️ *Daily /next limit reached!*\n\n' +
+      '⚠️ Daily /next limit reached!\n\n' +
       'Free users: 5 skips per day\n' +
       'Premium users: Unlimited skips\n\n' +
       'Upgrade to premium for unlimited /next!',
@@ -443,17 +441,17 @@ async function showStats(ctx) {
   const premiumBadge = user.isPremium ? '💎' : '🆓';
   
   await ctx.reply(
-    `📊 *Your Statistics*\n\n` +
-    `${premiumBadge} Account: ${user.isPremium ? 'Premium' : 'Free'}\n` +
-    `${user.gender === 'male' ? '👨' : '👩'} Gender: ${user.gender}\n` +
-    `🎂 Age: ${user.age || 'Not set'}\n` +
-    `💬 Total Chats: ${user.totalChats}\n` +
-    `✉️ Messages: ${user.totalMessages}\n` +
-    `📸 Media Sent: ${totalMedia}\n` +
-    `⏭️ Next Used: ${user.nextCount}/5 today\n\n` +
-    `📈 *Global Stats*\n` +
-    `👥 Total Users: ${totalUsers}\n` +
-    `🟢 Online: ${onlineUsers}`,
+    '📊 Your Statistics\n\n' +
+    premiumBadge + ' Account: ' + (user.isPremium ? 'Premium' : 'Free') + '\n' +
+    (user.gender === 'male' ? '👨' : '👩') + ' Gender: ' + user.gender + '\n' +
+    '🎂 Age: ' + (user.age || 'Not set') + '\n' +
+    '💬 Total Chats: ' + user.totalChats + '\n' +
+    '✉️ Messages: ' + user.totalMessages + '\n' +
+    '📸 Media Sent: ' + totalMedia + '\n' +
+    '⏭️ Next Used: ' + user.nextCount + '/5 today\n\n' +
+    '📈 Global Stats\n' +
+    '👥 Total Users: ' + totalUsers + '\n' +
+    '🟢 Online: ' + onlineUsers,
     { parse_mode: 'Markdown' }
   );
 }
@@ -477,9 +475,9 @@ async function showPremium(ctx) {
   if (user?.isPremium) {
     const until = new Date(user.premiumUntil);
     return ctx.reply(
-      '💎 *You have Premium!*\n\n' +
-      `Active until: ${until.toLocaleDateString()}\n\n` +
-      '*Your Premium Benefits:*\n' +
+      '💎 You have Premium!\n\n' +
+      'Active until: ' + until.toLocaleDateString() + '\n\n' +
+      'Your Premium Benefits:\n' +
       '✅ Gender filter\n' +
       '✅ Age filter\n' +
       '✅ Unlimited /next\n' +
@@ -495,8 +493,8 @@ async function showPremium(ctx) {
   ]);
   
   await ctx.reply(
-    '💎 *Upgrade to Premium*\n\n' +
-    '*Premium Features:*\n' +
+    '💎 Upgrade to Premium\n\n' +
+    'Premium Features:\n' +
     '🎯 Gender Filter - Chat with specific gender\n' +
     '🎂 Age Filter - Choose age range\n' +
     '⏭️ Unlimited /next - Skip without limits\n' +
@@ -510,17 +508,12 @@ async function showPremium(ctx) {
 bot.action('premium_features', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.editMessageText(
-    '💎 *Premium Features Explained*\n\n' +
-    '*🎯 Gender Filter*\n' +
-    'Only match with Male or Female\n\n' +
-    '*🎂 Age Filter*\n' +
-    'Set age range (18-25, 26-35, etc)\n\n' +
-    '*⏭️ Unlimited Next*\n' +
-    'Skip as many times as you want\n\n' +
-    '*⚡ Priority Matching*\n' +
-    'Get matched 3x faster\n\n' +
-    '*🚫 No Ads*\n' +
-    'Clean experience\n\n' +
+    '💎 Premium Features Explained\n\n' +
+    '🎯 Gender Filter\nOnly match with Male or Female\n\n' +
+    '🎂 Age Filter\nSet age range (18-25, 26-35, etc)\n\n' +
+    '⏭️ Unlimited Next\nSkip as many times as you want\n\n' +
+    '⚡ Priority Matching\nGet matched 3x faster\n\n' +
+    '🚫 No Ads\nClean experience\n\n' +
     '💰 Price: $4.99/month',
     { parse_mode: 'Markdown' }
   );
@@ -529,7 +522,7 @@ bot.action('premium_features', async (ctx) => {
 bot.action('buy_premium', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.reply(
-    '💳 *Payment Methods*\n\n' +
+    '💳 Payment Methods\n\n' +
     'Contact admin to purchase premium:\n' +
     '@your_admin_username\n\n' +
     'Payment via:\n' +
@@ -545,7 +538,7 @@ bot.hears('⚙️ Settings', async (ctx) => {
   
   if (!user?.isPremium) {
     return ctx.reply(
-      '⚠️ *Settings are Premium-only*\n\n' +
+      '⚠️ Settings are Premium-only\n\n' +
       'Upgrade to Premium to access:\n' +
       '• Gender filter\n' +
       '• Age filter\n' +
@@ -565,9 +558,9 @@ bot.hears('⚙️ Settings', async (ctx) => {
   ]);
   
   await ctx.reply(
-    '⚙️ *Premium Settings*\n\n' +
-    `Current filter: ${user.filterGender}\n` +
-    `Age range: ${user.filterAgeMin}-${user.filterAgeMax}\n\n` +
+    '⚙️ Premium Settings\n\n' +
+    'Current filter: ' + user.filterGender + '\n' +
+    'Age range: ' + user.filterAgeMin + '-' + user.filterAgeMax + '\n\n' +
     'Select your preferences:',
     { parse_mode: 'Markdown', ...keyboard }
   );
@@ -581,7 +574,7 @@ bot.action(/filter_(male|female|all)/, async (ctx) => {
     { filterGender: filter }
   );
   
-  await ctx.answerCbQuery(`✅ Filter set to: ${filter}`);
+  await ctx.answerCbQuery('✅ Filter set to: ' + filter);
 });
 
 bot.command('report', async (ctx) => {
@@ -672,7 +665,7 @@ bot.on('text', async (ctx) => {
     ]).resize();
     
     return ctx.reply(
-      '✅ *Setup complete!*\n\nTap Search to find strangers!',
+      '✅ Setup complete!\n\nTap Search to find strangers!',
       { parse_mode: 'Markdown', ...keyboard }
     );
   }
