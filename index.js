@@ -103,6 +103,58 @@ async function findPartner(userId) {
   });
 }
 
+async function tryAutoMatch() {
+  // Get all users who are searching
+  const searchingUsers = await User.find({ 
+    status: 'searching',
+    isBanned: false 
+  }).limit(50);
+  
+  if (searchingUsers.length < 2) return;
+  
+  // Match pairs
+  for (let i = 0; i < searchingUsers.length - 1; i += 2) {
+    const user1 = searchingUsers[i];
+    const user2 = searchingUsers[i + 1];
+    
+    if (user1.status === 'searching' && user2.status === 'searching') {
+      // Create match
+      await updateStatus(user1.userId, 'chatting', user2.userId);
+      await updateStatus(user2.userId, 'chatting', user1.userId);
+      
+      await User.updateOne({ userId: user1.userId }, { $inc: { totalChats: 1 } });
+      await User.updateOne({ userId: user2.userId }, { $inc: { totalChats: 1 } });
+      
+      // Notify both users
+      try {
+        await bot.telegram.sendMessage(
+          user1.userId,
+          '✅ *Chat partner found!*\n\n' +
+          'You can now start chatting.\n' +
+          'Send any message to talk!\n\n' +
+          '💡 /next - Skip partner\n' +
+          '💡 /stop - End chat\n' +
+          '💡 /report - Report partner',
+          { parse_mode: 'Markdown' }
+        );
+        
+        await bot.telegram.sendMessage(
+          user2.userId,
+          '✅ *Chat partner found!*\n\n' +
+          'You can now start chatting.\n' +
+          'Send any message to talk!\n\n' +
+          '💡 /next - Skip partner\n' +
+          '💡 /stop - End chat\n' +
+          '💡 /report - Report partner',
+          { parse_mode: 'Markdown' }
+        );
+      } catch (err) {
+        console.error('Error notifying matched users:', err);
+      }
+    }
+  }
+}
+
 async function endChat(userId) {
   const user = await getUser(userId);
   if (user && user.partnerId) {
@@ -222,11 +274,6 @@ bot.command('search', async (ctx) => {
     return ctx.reply('⚠️ Please complete your profile first by using /start');
   }
   
-  // Check if banned
-  if (user.isBanned) {
-    return ctx.reply('🚫 Your account has been banned due to multiple reports.\n\nContact support if you believe this is a mistake.');
-  }
-  
   if (user.status === 'chatting') {
     return ctx.reply('❌ You are already in a chat! Use /stop to end it first.');
   }
@@ -252,8 +299,7 @@ bot.command('search', async (ctx) => {
       'You can now start chatting.\n' +
       'Send any message to talk!\n\n' +
       '💡 /next - Skip partner\n' +
-      '💡 /stop - End chat\n' +
-      '💡 /report - Report partner',
+      '💡 /stop - End chat',
       { parse_mode: 'Markdown' }
     );
     
@@ -263,8 +309,7 @@ bot.command('search', async (ctx) => {
       'You can now start chatting.\n' +
       'Send any message to talk!\n\n' +
       '💡 /next - Skip partner\n' +
-      '💡 /stop - End chat\n' +
-      '💡 /report - Report partner',
+      '💡 /stop - End chat',
       { parse_mode: 'Markdown' }
     );
   } else {
@@ -386,7 +431,6 @@ bot.command('stats', async (ctx) => {
   const onlineUsers = await User.countDocuments({ 
     status: { $in: ['searching', 'chatting'] } 
   });
-  const totalMedia = await Media.countDocuments({ userId: ctx.from.id });
   
   const genderEmoji = {
     male: '👨',
@@ -399,101 +443,10 @@ bot.command('stats', async (ctx) => {
     genderEmoji[user.gender] + ' Gender: ' + (user.gender || 'Not set') + '\n' +
     '💬 Total Chats: ' + user.totalChats + '\n' +
     '✉️ Messages Sent: ' + user.totalMessages + '\n' +
-    '📸 Media Shared: ' + totalMedia + '\n' +
-    '⚠️ Reports Received: ' + user.reportsReceived + '\n' +
     '⭐ Premium: ' + (user.isPremium ? 'Yes' : 'No') + '\n\n' +
     '📈 *Global Stats*\n' +
     '👥 Total Users: ' + totalUsers + '\n' +
     '🟢 Online Now: ' + onlineUsers,
-    { parse_mode: 'Markdown' }
-  );
-});
-
-// Report system
-bot.command('report', async (ctx) => {
-  const user = await getUser(ctx.from.id);
-  
-  if (!user || user.status !== 'chatting' || !user.partnerId) {
-    return ctx.reply('❌ You must be in an active chat to report!\n\nUse /search to start chatting.');
-  }
-  
-  const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('😡 Rude/Toxic', 'report_toxic')],
-    [Markup.button.callback('🔞 Inappropriate Content', 'report_nsfw')],
-    [Markup.button.callback('📢 Spam', 'report_spam')],
-    [Markup.button.callback('👶 Underage User', 'report_underage')],
-    [Markup.button.callback('🚫 Other', 'report_other')]
-  ]);
-  
-  await ctx.reply(
-    '🔔 *Report Partner*\n\n' +
-    'Please select the reason for reporting:',
-    { parse_mode: 'Markdown', ...keyboard }
-  );
-});
-
-// Report callback handlers
-bot.action(/report_(.+)/, async (ctx) => {
-  const reason = ctx.match[1];
-  const user = await getUser(ctx.from.id);
-  
-  if (!user || !user.partnerId) {
-    return ctx.answerCbQuery('❌ You are not in a chat anymore!');
-  }
-  
-  const partner = await getUser(user.partnerId);
-  
-  const reasonText = {
-    toxic: 'Rude/Toxic Behavior',
-    nsfw: 'Inappropriate Content',
-    spam: 'Spam',
-    underage: 'Underage User',
-    other: 'Other Violation'
-  };
-  
-  // Save report
-  await Report.create({
-    reporterId: ctx.from.id,
-    reporterUsername: ctx.from.username,
-    reportedUserId: user.partnerId,
-    reportedUsername: partner?.username,
-    reason: reasonText[reason],
-    chatContext: 'Active chat session'
-  });
-  
-  // Increment reports received
-  const updatedPartner = await User.findOneAndUpdate(
-    { userId: user.partnerId },
-    { $inc: { reportsReceived: 1 } },
-    { new: true }
-  );
-  
-  // Auto-ban after 3 reports
-  if (updatedPartner.reportsReceived >= 3 && !updatedPartner.isBanned) {
-    await User.findOneAndUpdate(
-      { userId: user.partnerId },
-      { isBanned: true }
-    );
-    
-    try {
-      await bot.telegram.sendMessage(
-        user.partnerId,
-        '🚫 *Account Banned*\n\n' +
-        'Your account has been banned due to multiple reports.\n\n' +
-        'If you believe this is a mistake, please contact support.',
-        { parse_mode: 'Markdown' }
-      );
-    } catch (err) {
-      console.error('Failed to notify banned user:', err);
-    }
-  }
-  
-  await ctx.answerCbQuery('✅ Report submitted successfully!');
-  await ctx.editMessageText(
-    '✅ *Report Submitted*\n\n' +
-    'Thank you for your report. Our team will review it.\n\n' +
-    'The partner has been reported for: ' + reasonText[reason] + '\n\n' +
-    'You can continue chatting or use /stop to end the chat.',
     { parse_mode: 'Markdown' }
   );
 });
@@ -551,9 +504,6 @@ bot.on('photo', async (ctx) => {
     const photo = ctx.message.photo[ctx.message.photo.length - 1];
     const caption = ctx.message.caption || '';
     
-    // Save to database
-    await saveMedia(photo.file_id, 'photo', userId, user.partnerId, caption);
-    
     await bot.telegram.sendPhoto(
       user.partnerId,
       photo.file_id,
@@ -578,9 +528,6 @@ bot.on('video', async (ctx) => {
   
   try {
     const caption = ctx.message.caption || '';
-    
-    // Save to database
-    await saveMedia(ctx.message.video.file_id, 'video', userId, user.partnerId, caption);
     
     await bot.telegram.sendVideo(
       user.partnerId,
@@ -701,6 +648,15 @@ async function startBot() {
   await connectDB();
   bot.launch();
   console.log('✅ Bot started successfully!');
+  
+  // Auto-match interval - check every 3 seconds
+  setInterval(async () => {
+    try {
+      await tryAutoMatch();
+    } catch (err) {
+      console.error('Auto-match error:', err);
+    }
+  }, 3000);
 }
 
 startBot();
