@@ -15,23 +15,22 @@ const userSchema = new mongoose.Schema({
   partnerId: { type: Number, default: null },
   
   // Profile
-  gender: String, // male, female
+  gender: String,
   age: Number,
-  location: String,
   hasCompletedSetup: { type: Boolean, default: false },
   
   // Premium
   isPremium: { type: Boolean, default: false },
   premiumUntil: Date,
   
-  // Premium Filters (only for premium users)
-  filterGender: { type: String, default: 'all' }, // all, male, female
+  // Premium Filters
+  filterGender: { type: String, default: 'all' },
   filterAgeMin: { type: Number, default: 18 },
   filterAgeMax: { type: Number, default: 99 },
   
-  // Stats - SIMPLIFIED (removed detailed stats)
+  // Stats (simplified)
   totalChats: { type: Number, default: 0 },
-  nextCount: { type: Number, default: 0 }, // Track /next usage
+  nextCount: { type: Number, default: 0 },
   reportsReceived: { type: Number, default: 0 },
   isBanned: { type: Boolean, default: false },
   
@@ -104,7 +103,6 @@ async function findPartner(userId) {
     isBanned: false
   };
   
-  // Apply premium filters if user is premium
   if (user.isPremium && user.filterGender !== 'all') {
     query.gender = user.filterGender;
   }
@@ -132,10 +130,8 @@ async function tryAutoMatch() {
     const user2 = searchingUsers[i + 1];
     
     if (user1.status === 'searching' && user2.status === 'searching') {
-      // Check if they match each other's filters
       let match = true;
       
-      // Check user1's filters
       if (user1.isPremium && user1.filterGender !== 'all' && user1.filterGender !== user2.gender) {
         match = false;
       }
@@ -143,7 +139,6 @@ async function tryAutoMatch() {
         match = false;
       }
       
-      // Check user2's filters
       if (user2.isPremium && user2.filterGender !== 'all' && user2.filterGender !== user1.gender) {
         match = false;
       }
@@ -238,7 +233,6 @@ bot.start(async (ctx) => {
   );
 });
 
-// Setup callbacks
 bot.action(/setup_(male|female)/, async (ctx) => {
   const gender = ctx.match[1];
   
@@ -352,7 +346,7 @@ bot.command('stop', async (ctx) => {
     await ctx.reply('👋 *Chat ended*\n\nTap Search to find someone new!', { parse_mode: 'Markdown' });
     await bot.telegram.sendMessage(partnerId, '👋 *Stranger has disconnected*', { parse_mode: 'Markdown' });
   }
-}); // <-- FIX: Added closing ); here
+});
 
 bot.command('next', async (ctx) => {
   const userId = ctx.from.id;
@@ -362,7 +356,6 @@ bot.command('next', async (ctx) => {
     return ctx.reply('❌ You must be in a chat to use /next!');
   }
   
-  // Check premium limit (free users: 5 per day)
   if (!user.isPremium && user.nextCount >= 5) {
     const keyboard = Markup.inlineKeyboard([
       [Markup.button.callback('💎 Get Premium', 'show_premium')]
@@ -607,14 +600,15 @@ bot.action(/report_(.+)/, async (ctx) => {
         '🚫 *Account Banned*\n\nYour account has been banned due to reports.',
         { parse_mode: 'Markdown' }
       );
-    } catch (err) {}
+    } catch (err) {
+      // User might have blocked bot
+    }
   }
   
   await ctx.answerCbQuery('✅ Report submitted!');
   await ctx.editMessageText('✅ User reported. Thank you!');
 });
 
-// Handle text messages
 bot.on('text', async (ctx) => {
   if (ctx.message.text.startsWith('/')) return;
   
@@ -625,7 +619,6 @@ bot.on('text', async (ctx) => {
     return ctx.reply('Use /start first!');
   }
   
-  // Handle age setup
   if (!user.hasCompletedSetup && user.gender) {
     const age = parseInt(ctx.message.text);
     
@@ -650,7 +643,6 @@ bot.on('text', async (ctx) => {
     );
   }
   
-  // Handle age range filter (premium)
   if (user.isPremium && ctx.message.text.includes('-')) {
     const parts = ctx.message.text.split('-');
     if (parts.length === 2) {
@@ -695,7 +687,6 @@ bot.on('text', async (ctx) => {
   }
 });
 
-// Media handlers
 bot.on('photo', async (ctx) => {
   const userId = ctx.from.id;
   const user = await getUser(userId);
@@ -779,13 +770,21 @@ async function startBot() {
   bot.launch();
   console.log('✅ Bot started!');
   
-  // Reset daily next count every 24 hours
   setInterval(async () => {
     await User.updateMany({}, { nextCount: 0 });
     console.log('✅ Daily /next count reset');
   }, 24 * 60 * 60 * 1000);
   
-  // Auto-match interval - check every 1 second
   setInterval(async () => {
     try {
-      await
+      await tryAutoMatch();
+    } catch (err) {
+      console.error('Auto-match error:', err);
+    }
+  }, 1000);
+}
+
+startBot();
+
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
