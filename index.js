@@ -29,9 +29,8 @@ const userSchema = new mongoose.Schema({
   filterAgeMin: { type: Number, default: 18 },
   filterAgeMax: { type: Number, default: 99 },
   
-  // Stats
+  // Stats - SIMPLIFIED (removed detailed stats)
   totalChats: { type: Number, default: 0 },
-  totalMessages: { type: Number, default: 0 },
   nextCount: { type: Number, default: 0 }, // Track /next usage
   reportsReceived: { type: Number, default: 0 },
   isBanned: { type: Boolean, default: false },
@@ -229,13 +228,13 @@ bot.start(async (ctx) => {
   
   const keyboard = Markup.keyboard([
     ['🔍 Search'],
-    ['⚙️ Settings', '📊 Stats'],
-    ['💎 Premium', '❓ Help']
+    ['⚙️ Settings', '❓ Help'],
+    [user.isPremium ? '💎 Premium (Active)' : '💎 Get Premium']
   ]).resize();
   
   await ctx.reply(
     'Welcome back! 👋\n\n🎭 Chat anonymously with strangers\n\n🔍 Tap Search to find someone!',
-    { parse_mode: 'Markdown', ...keyboard }
+    keyboard
   );
 });
 
@@ -253,9 +252,6 @@ bot.action(/setup_(male|female)/, async (ctx) => {
     { userId: ctx.from.id },
     { gender, updatedAt: Date.now() }
   );
-  
-  // Store state for next message
-  ctx.session = { awaitingAge: true };
 });
 
 bot.hears('🔍 Search', async (ctx) => {
@@ -330,7 +326,6 @@ bot.hears('❓ Help', async (ctx) => {
     '/next - Next stranger\n' +
     '/stop - End chat\n' +
     '/report - Report user\n' +
-    '/stats - Your stats\n' +
     '/premium - Get premium',
     { parse_mode: 'Markdown' }
   );
@@ -357,7 +352,7 @@ bot.command('stop', async (ctx) => {
     await ctx.reply('👋 *Chat ended*\n\nTap Search to find someone new!', { parse_mode: 'Markdown' });
     await bot.telegram.sendMessage(partnerId, '👋 *Stranger has disconnected*', { parse_mode: 'Markdown' });
   }
-}
+}); // <-- FIX: Added closing ); here
 
 bot.command('next', async (ctx) => {
   const userId = ctx.from.id;
@@ -422,41 +417,7 @@ bot.command('next', async (ctx) => {
   }
 });
 
-bot.hears('📊 Stats', async (ctx) => {
-  await showStats(ctx);
-});
-
-bot.command('stats', async (ctx) => {
-  await showStats(ctx);
-});
-
-async function showStats(ctx) {
-  const user = await getUser(ctx.from.id);
-  if (!user) return ctx.reply('Use /start first!');
-  
-  const totalUsers = await User.countDocuments();
-  const onlineUsers = await User.countDocuments({ status: { $in: ['searching', 'chatting'] } });
-  const totalMedia = await Media.countDocuments({ userId: ctx.from.id });
-  
-  const premiumBadge = user.isPremium ? '💎' : '🆓';
-  
-  await ctx.reply(
-    '📊 Your Statistics\n\n' +
-    premiumBadge + ' Account: ' + (user.isPremium ? 'Premium' : 'Free') + '\n' +
-    (user.gender === 'male' ? '👨' : '👩') + ' Gender: ' + user.gender + '\n' +
-    '🎂 Age: ' + (user.age || 'Not set') + '\n' +
-    '💬 Total Chats: ' + user.totalChats + '\n' +
-    '✉️ Messages: ' + user.totalMessages + '\n' +
-    '📸 Media Sent: ' + totalMedia + '\n' +
-    '⏭️ Next Used: ' + user.nextCount + '/5 today\n\n' +
-    '📈 Global Stats\n' +
-    '👥 Total Users: ' + totalUsers + '\n' +
-    '🟢 Online: ' + onlineUsers,
-    { parse_mode: 'Markdown' }
-  );
-}
-
-bot.hears('💎 Premium', async (ctx) => {
+bot.hears(['💎 Get Premium', '💎 Premium (Active)'], async (ctx) => {
   await showPremium(ctx);
 });
 
@@ -575,6 +536,23 @@ bot.action(/filter_(male|female|all)/, async (ctx) => {
   );
   
   await ctx.answerCbQuery('✅ Filter set to: ' + filter);
+  await ctx.editMessageText(
+    '✅ Gender filter updated!\n\n' +
+    'Now matching with: ' + filter + '\n\n' +
+    'Use Search to find partners.',
+    { parse_mode: 'Markdown' }
+  );
+});
+
+bot.action('filter_age', async (ctx) => {
+  await ctx.answerCbQuery();
+  await ctx.editMessageText(
+    '🎂 Age Filter\n\n' +
+    'Send age range in format: MIN-MAX\n' +
+    'Example: 20-30\n\n' +
+    'Min: 18, Max: 99',
+    { parse_mode: 'Markdown' }
+  );
 });
 
 bot.command('report', async (ctx) => {
@@ -643,8 +621,12 @@ bot.on('text', async (ctx) => {
   const userId = ctx.from.id;
   const user = await getUser(userId);
   
+  if (!user) {
+    return ctx.reply('Use /start first!');
+  }
+  
   // Handle age setup
-  if (ctx.session?.awaitingAge) {
+  if (!user.hasCompletedSetup && user.gender) {
     const age = parseInt(ctx.message.text);
     
     if (isNaN(age) || age < 18 || age > 99) {
@@ -656,22 +638,43 @@ bot.on('text', async (ctx) => {
       { age, hasCompletedSetup: true }
     );
     
-    ctx.session = {};
-    
     const keyboard = Markup.keyboard([
       ['🔍 Search'],
-      ['⚙️ Settings', '📊 Stats'],
-      ['💎 Premium', '❓ Help']
+      ['⚙️ Settings', '❓ Help'],
+      ['💎 Get Premium']
     ]).resize();
     
     return ctx.reply(
       '✅ Setup complete!\n\nTap Search to find strangers!',
-      { parse_mode: 'Markdown', ...keyboard }
+      keyboard
     );
   }
   
-  if (!user || !user.hasCompletedSetup) {
-    return ctx.reply('Use /start first!');
+  // Handle age range filter (premium)
+  if (user.isPremium && ctx.message.text.includes('-')) {
+    const parts = ctx.message.text.split('-');
+    if (parts.length === 2) {
+      const min = parseInt(parts[0]);
+      const max = parseInt(parts[1]);
+      
+      if (!isNaN(min) && !isNaN(max) && min >= 18 && max <= 99 && min <= max) {
+        await User.findOneAndUpdate(
+          { userId },
+          { filterAgeMin: min, filterAgeMax: max }
+        );
+        
+        return ctx.reply(
+          '✅ Age filter updated!\n\n' +
+          'Range: ' + min + '-' + max + ' years\n\n' +
+          'Use Search to find partners.',
+          { parse_mode: 'Markdown' }
+        );
+      }
+    }
+  }
+  
+  if (!user.hasCompletedSetup) {
+    return ctx.reply('Use /start to complete setup!');
   }
   
   if (user.status === 'idle') {
@@ -685,7 +688,6 @@ bot.on('text', async (ctx) => {
   if (user.status === 'chatting' && user.partnerId) {
     try {
       await bot.telegram.sendMessage(user.partnerId, ctx.message.text);
-      await User.updateOne({ userId }, { $inc: { totalMessages: 1 } });
     } catch (err) {
       await endChat(userId);
       await ctx.reply('❌ Stranger disconnected.');
@@ -708,7 +710,6 @@ bot.on('photo', async (ctx) => {
     
     await saveMedia(photo.file_id, 'photo', userId, user.partnerId, caption);
     await bot.telegram.sendPhoto(user.partnerId, photo.file_id, { caption });
-    await User.updateOne({ userId }, { $inc: { totalMessages: 1 } });
   } catch (err) {
     await endChat(userId);
     await ctx.reply('❌ Stranger disconnected.');
@@ -725,7 +726,6 @@ bot.on('video', async (ctx) => {
     const caption = ctx.message.caption || '';
     await saveMedia(ctx.message.video.file_id, 'video', userId, user.partnerId, caption);
     await bot.telegram.sendVideo(user.partnerId, ctx.message.video.file_id, { caption });
-    await User.updateOne({ userId }, { $inc: { totalMessages: 1 } });
   } catch (err) {
     await endChat(userId);
   }
@@ -739,7 +739,6 @@ bot.on('voice', async (ctx) => {
   
   try {
     await bot.telegram.sendVoice(user.partnerId, ctx.message.voice.file_id);
-    await User.updateOne({ userId }, { $inc: { totalMessages: 1 } });
   } catch (err) {
     await endChat(userId);
   }
@@ -753,7 +752,6 @@ bot.on('sticker', async (ctx) => {
   
   try {
     await bot.telegram.sendSticker(user.partnerId, ctx.message.sticker.file_id);
-    await User.updateOne({ userId }, { $inc: { totalMessages: 1 } });
   } catch (err) {
     await endChat(userId);
   }
@@ -767,7 +765,6 @@ bot.on('animation', async (ctx) => {
   
   try {
     await bot.telegram.sendAnimation(user.partnerId, ctx.message.animation.file_id);
-    await User.updateOne({ userId }, { $inc: { totalMessages: 1 } });
   } catch (err) {
     await endChat(userId);
   }
@@ -791,14 +788,4 @@ async function startBot() {
   // Auto-match interval - check every 1 second
   setInterval(async () => {
     try {
-      await tryAutoMatch();
-    } catch (err) {
-      console.error('Auto-match error:', err);
-    }
-  }, 1000);
-}
-
-startBot();
-
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+      await
